@@ -1,0 +1,311 @@
+---
+title: Kernel
+author: STAT 432
+abstract: This is the supplementary `R` file for kernel regression in the lecture note "Kernel".
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(fig.align='center')
+options(width = 1000)
+```
+
+## KNN vs. Kernel
+
+We first compare the $K$NN method with a Gaussian kernel regression. $K$NN has jumps while Gaussian kernel regression is smooth.
+
+```{r, fig.width=12, fig.height=5, echo=F, out.width = '80%'}
+    library(kknn)
+    set.seed(1)
+    
+    # generate training data with 2*sin(x) and random Gaussian errors
+    n = 40
+    x <- runif(n, 0, 2*pi)
+    y <- 2*sin(x) + rnorm(length(x))
+    
+    # generate testing data points where we evaluate the prediction function
+    test.x = seq(0, 1, 0.001)*2*pi
+    
+    par(mfrow=c(1,2))
+    # kNN
+    k = 10
+    knn.fit = kknn(y ~ x, train = data.frame(x = x, y = y), 
+                   test = data.frame(x = test.x),
+                   k = k, kernel = "rectangular")
+    test.pred = knn.fit$fitted.values
+    
+    # plot the data
+    par(mar = c(2,3,2,0))
+    plot(x, y, xlim = c(0, 2*pi), pch = 19, cex = 1, 
+         xlab = "", ylab = "", cex.lab = 1.5)
+    title(main='KNN', cex.main = 1.5)
+    
+    # plot the true regression line
+    lines(test.x, 2*sin(test.x), col = "deepskyblue", lwd = 3)
+    
+    
+    # plot the fitted line
+    lines(test.x, test.pred, type = "s", col = "darkorange", lwd = 3)
+    
+    # kernel smooth
+    h = 1
+    ksmooth.fit = ksmooth(x, y, bandwidth = h, kernel = "normal", x.points = test.x)
+    test.pred = ksmooth.fit$y
+    
+    # plot the data
+    par(mar = c(2,3,2,0))
+    plot(x, y, xlim = c(0, 2*pi), pch = 19, cex = 1, 
+         xlab = "", ylab = "", cex.lab = 1.5)
+    title(main='Gaussain Kernel', cex.main = 1.5)
+    
+    # plot the true regression line
+    lines(test.x, 2*sin(test.x), col = "deepskyblue", lwd = 3)
+    
+    
+    # plot the fitted line
+    lines(test.x, test.pred, type = "s", col = "darkorange", lwd = 3)
+```
+
+## Gaussian Kernel Regression
+
+A Nadaraya-Watson kernel regression is done by
+$$\widehat f(x)=\frac{\sum_i K_h(x,x_i) y_i}{\sum_i K_h(x,x_i)},$$
+where $h$ is a bandwidth that controls the distance. At each target point $x$, only the training data that are closer to $x$ receives higher weights $K_h(x,x_i)$, hence their $y_i$ values are more influential in terms of estimating $f(x)$. For Gaussian kernel, we use
+$$K_h(x,x_i)=\frac1{h\sqrt{2\pi}}\exp\left\{-\frac{(x-x_i)^2}{2h^2}\right\}$$
+
+```{r, fig.width=8, fit.height=6}
+    par(mfrow=c(2,2))
+    for (x_k in 2:5)
+    {
+        par(mar=rep(2,4))
+        plot(x, y, xlim = c(0, 2*pi), pch = 19, cex = dnorm(x,x_k,h), 
+             axes=FALSE)
+        title(main=paste("Kernel average at x = ", x_k))
+        lines(test.x, 2*sin(test.x), col = "deepskyblue", lwd = 2.5)
+        lines(test.x, test.pred, type = "s", col = "darkorange", lwd = 2.5)
+        points(x_k,ksmooth(x, y, bandwidth = h, kernel = "normal", x.points = x_k)$y,pch=18,col='red',cex=2)
+        box()
+        # add shaded Gaussian kernel
+        coord.x=seq(max(0,x_k-3*h),min(2*pi,x_k+3*h),length.out=100)
+        coord.y=dnorm(coord.x,x_k,h)
+        coord.x=c(coord.x[1],coord.x,coord.x[100])
+        coord.y=c(0,coord.y,0)
+        polygon(coord.x,3*coord.y-3,col=adjustcolor('gray',alpha=.5))
+    }
+```
+
+The bandwidth $h$ is an important tuning parameter that controls the bias-variance trade-off. By setting a large $h$, the estimator is more stable but has more bias.
+
+```{r}
+h=3
+ksmooth.fit = ksmooth(x, y, bandwidth = h, kernel = "normal", x.points = test.x)
+```
+
+```{r, fig.width=8, fit.height=6,echo=F, out.width='50%'}
+    par(mar=rep(2,4))
+    x_k=2
+    plot(x, y, xlim = c(0, 2*pi), pch = 19, cex = dnorm(x,x_k,h), 
+         axes=FALSE)
+    title(main=paste("Kernel average at x = ", x_k, ' with h = ',h))
+    lines(test.x, 2*sin(test.x), col = "deepskyblue", lwd = 2.5)
+    lines(test.x, ksmooth.fit$y, type = "s", col = "darkorange", lwd = 2.5)
+    points(x_k,ksmooth(x, y, bandwidth = h, kernel = "normal", x.points = x_k)$y,pch=18,col='red',cex=2)
+    box()
+    # add shaded Gaussian kernel
+    coord.x=seq(max(0,x_k-3*h),min(2*pi,x_k+3*h),length.out=100)
+    coord.y=dnorm(coord.x,x_k,h)
+    coord.x=c(coord.x[1],coord.x,coord.x[100])
+    coord.y=c(0,coord.y,0)
+    polygon(coord.x,3*coord.y-3,col=adjustcolor('gray',alpha=.5))
+```
+
+Other kernel functions can also be defined. The most efficient kernel is the Epanechnikov kernel, which will minimize the mean integrated squared error (MISE). The efficiency is defined as
+$$\left(\int u^2K(u)du\right)^{\frac12}\int K^2(u)du,$$
+where $u$ is the difference two points. Different kernel functions can be visualized in the following. Most kernels are bounded within $[-h/2,h/2]$.
+
+```{r, fig.width=8, fit.height=6,echo=F, out.width='45%'}
+    par(mar=rep(2,4))
+    xs=seq(-1.5,1.5,length.out=1000)
+    unif=function(u)(.5*(abs(u)<=1))
+    triang=function(u)((1-abs(u))*(abs(u)<=1))
+    epan=function(u)(3/4*(1-u^2)*(abs(u)<=1))
+    triwt=function(u)(35/32*(1-u^2)^3*(abs(u)<=1))
+    gauss=function(u)(dnorm(u))
+    ys=cbind(unif(xs),triang(xs),epan(xs),triwt(xs),gauss(xs))
+    # plot
+    matplot(xs,ys,type='l',lty=1,lwd=3,col=c('red','green','blue','magenta','orange'))
+    legend('topleft',legend=c('Uniform','Triangular','Epanechnikov','Triweight','Gaussian'),lty=1,lwd=3,col=c('red','green','blue','magenta','orange'))
+```
+
+## Local Linear Regression
+
+Local averaging will suffer severe bias at the boundaries. One solution is to use the local polynomial regression. The following examples are local linear regressions, evaluated as different target points. We are solving for a linear model weighted by the kernel weights
+$$\sum_{i=1}^n K_h(x,x_i) (y_i-\beta_0-\beta_1x_i)^2$$
+
+```{r, fig.width=8, fit.height=6}
+    set.seed(1)
+    # generate training data with 2*sin(x) and random Gaussian errors
+    n = 100
+    x <- runif(n, 0, 2*pi)
+    y <- 2*sin(x) + rnorm(length(x))
+    
+    par(mfrow=c(2,2))
+    h=1
+    for (x_k in c(0,3.142,4.712,6.283))
+    {
+        par(mar=rep(2,4))
+        plot(x, y, xlim = c(0, 2*pi), pch = 19, cex = dnorm(x,x_k,h), 
+             axes=FALSE)
+        title(main=paste("Local Linear Regression average at x = ", x_k))
+        lines(test.x, 2*sin(test.x), col = "deepskyblue", lwd = 2.5)
+        lines(test.x, test.pred, type = "s", col = "darkorange", lwd = 2.5)
+        # local linear fit
+        # loclin.fit=loess(y~x,span=.25,degree=1,control=loess.control(surface = "direct"))
+        # points(x_k,predict(loclin.fit,x_k),pch=18,col='red',cex=2)
+        wts=dnorm(x,x_k,h);wts=wts/sum(wts)
+        loclin.fit1=lm(y~x,weights=wts)
+        points(x_k,predict(loclin.fit1,data.frame(x=x_k)),pch=18,col='red',cex=2)
+        xs=seq(x_k-h,x_k+h,length.out = 100)
+        lines(xs,predict(loclin.fit1,data.frame(x=xs)),col='red',lwd=1.5)
+        box()
+        # add shaded Gaussian kernel
+        coord.x=seq(max(0,x_k-3*h),min(2*pi,x_k+3*h),length.out=100)
+        coord.y=dnorm(coord.x,x_k,h)
+        coord.x=c(coord.x[1],coord.x,coord.x[100])
+        coord.y=c(0,coord.y,0)
+        polygon(coord.x,3*coord.y-3,col=adjustcolor('gray',alpha=.5))
+        legend('topright',legend=c('training data','kernel smoother','local linear'),pch=c(19,NA,20),lty=c(NA,1,1),col=c('black','darkorange','red'))
+    }
+```
+
+
+## Local Polynomial Regression
+
+The following examples are local polynomial regressions, evaluated as different target points. We can easily extend the local linear model to inccorperate higher orders terms:
+$$\sum_{i=1}^n K_h(x,x_i) \left[y_i-\beta_0(x)-\sum_{r=1}^d\beta_r(x)x_i^r\right]^2$$
+
+The followings are local quadratic fittings, which will further correct the bias.
+
+```{r, fig.width=8, fit.height=6,echo=F}
+    set.seed(1)
+    # generate training data with 2*sin(x) and random Gaussian errors
+    n = 100
+    x <- runif(n, 0, 2*pi)
+    y <- 2*sin(x) + rnorm(length(x))
+    
+    par(mfrow=c(2,2))
+    h=1
+    for (x_k in c(0,3.142,4.712,6.283))
+    {
+        par(mar=rep(2,4))
+        plot(x, y, xlim = c(0, 2*pi), pch = 19, cex = dnorm(x,x_k,h), 
+             axes=FALSE)
+        title(main=paste("Local Quadratic Regression average at x = ", x_k))
+        lines(test.x, 2*sin(test.x), col = "deepskyblue", lwd = 2.5)
+        lines(test.x, test.pred, type = "s", col = "darkorange", lwd = 2.5)
+        # local quadratic fit
+        wts=dnorm(x,x_k,h);wts=wts/sum(wts)
+        locquad.fit=lm(y~poly(x,degree=2),weights=wts)
+        points(x_k,predict(locquad.fit,data.frame(x=x_k)),pch=18,col='red',cex=2)
+        xs=seq(x_k-h,x_k+h,length.out = 100)
+        lines(xs,predict(locquad.fit,data.frame(x=xs)),col='red',lwd=1.5)
+        box()
+        # add shaded Gaussian kernel
+        coord.x=seq(max(0,x_k-3*h),min(2*pi,x_k+3*h),length.out=100)
+        coord.y=dnorm(coord.x,x_k,h)
+        coord.x=c(coord.x[1],coord.x,coord.x[100])
+        coord.y=c(0,coord.y,0)
+        polygon(coord.x,3*coord.y-3,col=adjustcolor('gray',alpha=.5))
+        legend('topright',legend=c('training data','kernel smoother','local quadratic'),pch=c(19,NA,20),lty=c(NA,1,1),col=c('black','darkorange','red'))
+    }
+```
+
+
+## R Implementations
+
+Some popular `R` functions implements the local polynomial regressions: `loess`, `locfit`, `locploy`, etc. These functions automatically calculate the fitted value for each target point (essentially all the observed points). This can be used in combination with `ggplot2`. The point-wise confidence intervals are also calculated.
+
+```{r fig.width=8, fit.height=6, out.width='45%'}
+    library(ggplot2)
+    ggplot(mpg, aes(displ, hwy)) + geom_point() +
+      geom_smooth(col = "red", method = "loess", span = 0.5)
+```
+
+A toy example that compares different bandwidth:
+
+```{r, fig.width=8, fit.height=6}
+    # local polynomial fitting using locfit and locpoly
+    
+    library(KernSmooth)
+    library(locfit)
+    
+    n <- 100
+    x <- runif(n,0,1)
+    y <- sin(2*pi*x)+rnorm(n,0,1)
+    y = y[order(x)]
+    x = sort(x)
+    
+    plot(x, y, pch = 19)
+    points(x, sin(2*pi*x), lwd = 3, type = "l", col = 1)
+    lines(locpoly(x,y,bandwidth=0.15,degree=2),col=2, lwd = 3)
+    lines(locfit(y~lp(x, nn=0.2, h=0.05,deg=2)),col=4, lwd = 3)
+    legend("topright", c("locpoly", "locfit"), col = c(2,4), lty = 1, cex = 1.5, lwd =2)
+
+```
+
+## Kernel Density Estimations
+
+A natural estimator, by using the counts, is
+$$\widehat f(x)=\frac{\#\{x_i : x_i\in[x-\frac{h}{2},x+\frac{h}{2}]\}}{hn}$$
+This maybe compared with the histgram estimator
+
+```{r, fig.width=12, fit.height=5, out.width='80%'}
+    par(mfrow = c(1, 2), mar=rep(2, 4))
+    hist(mpg$hwy, breaks = seq(6, 50, 2))
+    xgrid = seq(6, 50, 0.1)
+    plot(xgrid, sapply(xgrid, FUN = function(x, obs, h) sum( ((x-h/2) <= obs) * ((x+h/2) > obs))/h/length(obs), obs = mpg$hwy, h = 2), type = "s")
+```
+
+Here is a close-up demonstration of how those uniform density functions are stacked for all observations.
+
+```{r fig.width=8, fit.height=8, out.width='50%'}
+    # simulate the data
+    set.seed(1)
+    n=10
+    c1=rbinom(n,1,.5)
+    x=c(rnorm(sum(c1)),rnorm(n-sum(c1),4,2))
+    # plot data
+    matplot(rep(1,2)%*%t(x),c(0,.1)%*%t(rep(1,n)),xlim=c(-2,8),ylim=c(0,.3),xlab=NA,ylab=NA,type='l',col='black',lty=1,lwd=1.5)
+    # plot estimate
+    # lines(density(x,kernel='rectangular'),lwd=2,col='darkorange')
+    xs=seq(-2,8,.1)
+    lines(xs, sapply(xs, FUN = function(x, obs, h) sum( ((x-h/2) <= obs) * ((x+h/2) > obs))/h/length(obs), obs = x, h = 2), lwd=2,col='darkorange')
+    # add truth
+    curve(dnorm(x)/2+dnorm(x,4,2)/2,from=-2,to=8,lwd=2,col='deepskyblue',add=T)
+```
+
+However, this is apparently very bumpy. Let’s consider using a smooth function instead of the counts (uniform kernel). Naturally, we can use the Gaussian kernel function to calculate the numerator in the above equation.
+
+
+```{r fig.width=8, fit.height=8, out.width='50%'}
+    # plot data
+    matplot(rep(1,2)%*%t(x),c(0,.1)%*%t(rep(1,n)),xlim=c(-2,8),ylim=c(0,.25),xlab=NA,ylab=NA,type='l',col='black',lty=1,lwd=1.5)
+    # plot estimate
+    kde=density(x,kernel='gaussian')
+    lines(kde,lwd=2,col='darkorange')
+    # add truth
+    curve(dnorm(x)/2+dnorm(x,4,2)/2,from=-2,to=8,lwd=2,col='deepskyblue',add=T)
+    for(x_k in x){
+      curve(dnorm(x,x_k,kde$bw)/dnorm(0)*0.05,from=x_k-2*kde$bw,to=x_k+2*kde$bw,add=T)
+    }
+```
+
+We further demonstrate this on the `mpg` dataset.
+
+```{r fig.width=8, fit.height=8, out.width='50%'}
+    xgrid = seq(6, 50, 0.1)
+    kernelfun <- function(x, obs, h) sum(exp(-0.5*((x-obs)/h)^2)/sqrt(2*pi))
+    plot(xgrid, sapply(xgrid, FUN = kernelfun, obs = mpg$hwy, h = 1.5)/length(mpg$hwy), type = "l",
+         xlab = "MPG", ylab = "Estimated Density", col = "darkorange", lwd = 3)
+```

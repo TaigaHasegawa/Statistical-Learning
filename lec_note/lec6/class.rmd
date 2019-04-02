@@ -1,0 +1,427 @@
+---
+title: Classifications
+author: STAT 432
+abstract: This is the supplementary `R` file for classification models in the lecture note "Class".
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(fig.align='center')
+knitr::opts_chunk$set(error = TRUE)
+options(width = 1000)
+```
+
+## Logistic Regression 
+
+We use the South Africa heart data as a demonstration. The goal is to estimate the probability of `chd`, the indicator of coronary heart disease. 
+
+```{r}
+    library(ElemStatLearn)
+    data(SAheart)
+    
+    heart = SAheart
+    heart$famhist = as.numeric(heart$famhist)-1
+    n = nrow(heart)
+    p = ncol(heart)
+    
+    heart.full = glm(chd~., data=heart, family=binomial)
+    round(summary(heart.full)$coef, dig=3)
+    
+    # fitted value 
+    yhat = (heart.full$fitted.values>0.5)
+    table(yhat, SAheart$chd)
+```
+
+Based on what we learned in class, we can solve this problem ourselves using numerical optimization. Here we will demonstrate an approach that uses general solvers. First, write the objective function of the logistic regression, for any value of $\boldsymbol \beta$, $\mathbf{X}$ and $\mathbf{y}$.
+
+```{r}
+    # the negative log-likelihood function of logistic regression 
+    my.loglik <- function(b, x, y)
+    {
+        bm = as.matrix(b)
+        xb =  x %*% bm
+        # this returns the negative loglikelihood
+        return(sum(y*xb) - sum(log(1 + exp(xb))))
+    }
+
+    # Gradient
+    my.gradient <- function(b, x, y)
+    {
+        bm = as.matrix(b) 
+        expxb =  exp(x %*% bm)
+        return(t(x) %*% (y - expxb/(1+expxb)))
+    }
+```
+
+Let's check the result of this function for some arbitrary $\boldsymbol \beta$ value.  
+
+```{r}
+    # prepare the data matrix, I am adding a column of 1 for intercept
+    
+    x = as.matrix(cbind("intercept" = 1, heart[, 1:9]))
+    y = as.matrix(heart[,10])
+    
+    # check my function
+    b = rep(0, ncol(x))
+    my.loglik(b, x, y) # scaler
+    
+    # check the optimal value and the likelihood
+    my.loglik(heart.full$coefficients, x, y)
+```
+
+Then we optimize this objective function 
+
+```{r}
+    # Use a general solver to get the optimal value
+    # Note that we are doing maximizaiton instead of minimization, hence, need to specify "fnscale" = -1
+    optim(b, fn = my.loglik, gr = my.gradient, 
+          method = "BFGS", x = x, y = y, control = list("fnscale" = -1))
+```
+
+This matches our `glm()` solution. Now, if we do not have a general solver, we should consider using the Newton-Raphson. You need to write a function to calculate the Hessian matrix and proceed with an optimization update. Figure this out in your homework. The solution will be released later on.
+
+```{r, echo = FALSE, results = 'hide'}
+    # Hessian
+    my.hessian <- function(b, x, y)
+    {
+    	bm = as.matrix(b) 
+    	expxb =  exp(x %*% bm)
+    	x1 = sweep(x, 1, expxb/(1+expxb)^2, "*")
+    	return(-t(x) %*% x1)
+    }
+
+    # check my functions to make sure the dimensions match
+    b = rep(0, ncol(x))
+    my.loglik(b, x, y) # scaler
+    my.gradient(b, x, y) # p by 1 matrix
+    my.hessian(b, x, y) # p by p matrix
+
+    my.logistic <- function(b, x, y, tol = 1e-10, maxitr = 30, gr, hess, verbose = FALSE)
+    {
+        b_new = b
+        
+        for (j in 1:maxitr) # turns out you don't really need many iterations
+        {
+        	b_old = b_new
+        	b_new = b_old - solve(hess(b_old, x, y)) %*% gr(b_old, x, y)
+        	
+        	if (verbose)
+        	{
+        	    cat(paste("at iteration ", j,", current beta is \n", sep = ""))
+        	    cat(round(b_new, 3))
+        	    cat("\n")
+        	}    
+        	if (sum(abs(b_old - b_new)) < 1e-10) break;
+        }
+        return(b_new)
+    }
+```
+
+```{r}
+    # After defining some functions ... 
+```
+
+```{r}
+    # my Newton-Raphson method
+    # set up an initial value
+    # this is sometimes crucial...
+    
+    b = rep(0, ncol(x))
+    
+    mybeta = my.logistic(b, x, y, tol = 1e-10, maxitr = 20, 
+                         gr = my.gradient, hess = my.hessian, verbose = TRUE)
+    
+    # the parameter value
+    mybeta
+    # get the standard error estimation 
+    mysd = sqrt(diag(solve(-my.hessian(mybeta, x, y))))    
+```
+
+With this solution, I can then get the standard errors and the p-value. The code is hidden. But you can check them with the `glm()` function solution. 
+
+```{r echo = FALSE}
+    # my summary matrix
+    round(data.frame("beta" = mybeta, "sd" = mysd, "z" = mybeta/mysd, 
+    	  "pvalue" = 2*(1-pnorm(abs(mybeta/mysd)))), dig=5)
+	  
+    # check that with the glm fitting 
+    # round(summary(heart.full)$coef, dig=5)
+```
+
+## Discriminant Analysis
+
+Comparing densities (after removing some constants) in LDA. We create two density functions that use the same covariance matrix. The decision line is linear. 
+
+```{r, message=FALSE}
+    library(plotly)
+    library(mvtnorm)
+
+    # generate two densities 
+    x1 = seq(-2.5, 2.5, 0.1)
+    x2 = seq(-2.5, 2.5, 0.1)
+    data = expand.grid(x1, x2)
+    
+    Sigma = matrix(c(1, 0.5, 0.5, 1), 2, 2)
+    sigma_inv = solve(Sigma)
+    
+    # generate two class means
+    mu1 = c(0.5, -1)
+    mu2 = c(-0.5, 0.5)
+    
+    # define prior 
+    
+    p1 = 0.4 
+    p2 = 0.6
+    
+    # the density function after removing some constants
+    d1 = apply(data, 1, function(x) exp(-0.5 * t(x - mu1) %*% sigma_inv %*% (x - mu1))*p1 )
+    d2 = apply(data, 1, function(x) exp(-0.5 * t(x - mu2) %*% sigma_inv %*% (x - mu2))*p2 )
+    
+    # plot the densities
+    plot_ly(x = x1, y = x2) %>% 
+            add_surface(z = matrix(d1, length(x1), length(x2)), colorscale = list(c(0,"rgb(255,112,183)"),c(1,"rgb(128,0,64)"))) %>% 
+            add_surface(z = matrix(d2, length(x1), length(x2))) %>% 
+            layout(scene = list(xaxis = list(title = "X1"), 
+                                yaxis = list(title = "X2"),
+                                zaxis = list(title = "Log Normal Densities")))
+```
+
+Comparing densities (after removing some constants) in QDA. We create two density functions that use different covariance matrices. The decision line is nonlinear.
+
+```{r}
+    Sigma2 = matrix(c(1, -0.5, -0.5, 1), 2, 2)
+    sigma2_inv = solve(Sigma2)
+    
+    # the density function after removing some constants
+    d1 = apply(data, 1, function(x) 1/sqrt(det(Sigma))*exp(-0.5 * t(x - mu1) %*% sigma_inv %*% (x - mu1))*p1 )
+    d2 = apply(data, 1, function(x) 1/sqrt(det(Sigma2))*exp(-0.5 * t(x - mu2) %*% sigma2_inv %*% (x - mu2))*p2 )
+    
+    # plot the densities
+    plot_ly(x = x1, y = x2) %>% 
+            add_surface(z = matrix(d1, length(x1), length(x2)), colorscale = list(c(0,"rgb(107,184,214)"),c(1,"rgb(0,90,124)"))) %>% 
+            add_surface(z = matrix(d2, length(x1), length(x2))) %>% 
+            layout(scene = list(xaxis = list(title = "X1"), 
+                                yaxis = list(title = "X2"),
+                                zaxis = list(title = "Log Normal Densities")))  
+```
+
+```{r include = FALSE}    
+    # constants 
+    c1 = - 0.5 * t(mu1) %*% sigma_inv %*% mu1 + log(0.3)
+    c2 = - 0.5 * t(mu2) %*% sigma_inv %*% mu2 + log(0.7)    
+    
+
+    # the discriminate function 
+    d1 = apply(data, 1, function(x) t(x) %*% sigma_inv %*% mu1 + c1 )
+    d2 = apply(data, 1, function(x) t(x) %*% sigma_inv %*% mu2 + c2 )   
+```    
+    
+#### Example: the Hand Written Digit Data
+
+We first sample 100 data from both the training and testing sets. 
+
+```{r}
+    # a plot of some samples 
+    findRows <- function(zip, n) {
+        # Find n (random) rows with zip representing 0,1,2,...,9
+        res <- vector(length=10, mode="list")
+        names(res) <- 0:9
+        ind <- zip[,1]
+        for (j in 0:9) {
+        res[[j+1]] <- sample( which(ind==j), n ) }
+        return(res) 
+    }
+    
+    set.seed(1)
+    
+    # find 100 samples for each digit for both the training and testing data
+    train.id <- findRows(zip.train, 100)
+    train.id = unlist(train.id)
+    
+    test.id <- findRows(zip.test, 100)
+    test.id = unlist(test.id)
+    
+    X = zip.train[train.id, -1]
+    Y = as.factor(zip.train[train.id, 1])
+    dim(X)
+    
+    Xtest = zip.test[test.id, -1]
+    Ytest = as.factor(zip.test[test.id, 1])
+    dim(Xtest)
+```
+
+We can then fit LDA and QDA and do prediction.
+
+```{r}
+    # fit LDA
+    library(MASS)
+    
+    dig.lda=lda(X,Y)
+    Ytest.pred=predict(dig.lda, Xtest)$class
+    table(Ytest, Ytest.pred)
+    mean(Ytest != Ytest.pred)
+```
+
+However, QDA does not work in this case. Why?
+```{r}
+    dig.qda = qda(X, Y) # error message
+```
+
+How do we fix this? Recommended when $n>5p$.
+
+#### Example: iris data
+
+Now we use the iris data to show how Naive Bayes classifier is used in `R`. The task is to classify the species into one of "setosa", "versicolor", "virginica".
+```{r}
+data(iris)
+head(iris)
+```
+
+Install `e1071` package if you have not. Now we use `naiveBayes` function to do the classification.
+For continuous covariates, it implements the Gaussian kernel.
+```{r warning=F}
+# isntall e1071 if necessary
+require(e1071)
+# use naiveBayes to classify iris species
+nb_iris=naiveBayes(Species~., data=iris)
+nb_iris # show prior and conditional prabilities
+# prediction
+nb_pred=predict(nb_iris,iris)
+# confusion matrix
+table(nb_pred,iris$Species)
+# error rate
+mean(nb_pred!=iris$Species)
+```
+
+You can train your naive Bayes model by cross validation using `caret` package.
+To train naive Bayes in `caret`, we need `klaR` package.
+```{r message=F}
+# load caret
+library(caret)
+# install klaR if necessary
+require(klaR)
+# train naive Bayes with 10-fold cross validation
+nbcv_iris=train(Species~., data=iris, method='nb', trControl=trainControl(method='cv',number=10))
+nbcv_iris
+# predict with the final model
+nbcv_pred=predict(nbcv_iris$finalModel,iris)$class
+# confusion matrix
+table(nbcv_pred,iris$Species)
+# error rate
+mean(nbcv_pred!=iris$Species)
+```
+
+#### Example: spam emails
+
+Consider another example using naive Bayes.
+```{r message=F, warning=F}
+library(ElemStatLearn)
+# spam data
+dim(spam)
+# split data
+set.seed(2019)
+index = sample(nrow(spam), floor(nrow(spam) * 0.7)) #70/30 split.
+train = spam[index,]
+test = spam[-index,]
+xTrain = train[,-58] # removing y-outcome variable.
+yTrain = train$spam # only y.
+xTest = test[,-58]
+yTest = test$spam
+# use only naiveBayes
+nb_spam=naiveBayes(xTrain, yTrain)
+# prediction
+nb_pred=predict(nb_spam,xTest)
+# confusion matrix
+table(nb_pred,yTest)
+# error rate
+mean(nb_pred!=yTest)
+# train naiveBayes using cross-validation
+nbcv_spam=train(xTrain, yTrain, method='nb', trControl=trainControl(method='cv',number=10))
+# predict with the final model
+nbcv_pred=predict(nbcv_spam$finalModel,xTest)$class
+# confusion matrix
+table(nbcv_pred,yTest)
+# error rate
+mean(nbcv_pred!=yTest)
+```
+
+## Comparing Logistic Regression \& Discriminant Analysis
+
+we’ll examine stock market `Smarket` data provided by the `ISLR` package. This data set consists of percentage returns for the S\&P 500 stock index over 1,250 days, from the beginning of 2001 until the end of 2005. For each date, percentage returns for each of the five previous trading days, `Lag1` through `Lag5` are provided. In addition `Volume` (the number of shares traded on the previous day, in billions), `Today` (the percentage return on the date in question) and `Direction` (whether the market was Up or Down on this date) are provided.
+
+```{r}
+# load data
+data(Smarket,package='ISLR')
+head(Smarket)
+# split data
+train <- subset(Smarket, Year < 2005)
+test <- subset(Smarket, Year == 2005)
+```
+
+Now we fit Logistic Regression, LDA, QDA to train the model on training data and test the model on testing data. The task is to classify whether the market goes up or down.
+
+```{r}
+## logistic regression
+glm.fit <- glm(Direction ~ Lag1 + Lag2 + Lag3 + Lag4 + Lag5 + Volume, 
+               data = train,family = binomial)
+summary(glm.fit)
+# predictions
+glm.probs <- predict(glm.fit, test, type="response")
+# confusion matrix
+table(test$Direction, ifelse(glm.probs > 0.5, "Up", "Down"))
+# error rate
+mean(ifelse(glm.probs > 0.5, "Up", "Down") != test$Direction)
+
+# check the most relevant predictors, select Lag1 and Lag2
+varImp(glm.fit)
+# refit
+glm.fit <- glm(Direction ~ Lag1 + Lag2, 
+               data = train,family = binomial)
+# predictions
+glm.probs <- predict(glm.fit, test, type="response")
+# error rate: improved
+mean(ifelse(glm.probs > 0.5, "Up", "Down") != test$Direction)
+```
+
+```{r}
+## LDA
+(lda.fit <- lda(Direction ~ Lag1 + Lag2, data = train))
+# predictions
+test.predicted.lda <- predict(lda.fit, newdata = test)
+# confusion matrix
+table(test$Direction, test.predicted.lda$class)
+# error rate
+mean(test.predicted.lda$class != test$Direction)
+
+## QDA
+(qda.fit <- qda(Direction ~ Lag1 + Lag2, data = train))
+# predictions
+test.predicted.qda <- predict(qda.fit, newdata = test)
+# confusion matrix
+table(test$Direction, test.predicted.qda$class)
+# error rate
+mean(test.predicted.qda$class != test$Direction)
+```
+
+Finally, we plot [ROC](https://en.wikipedia.org/wiki/Receiver_operating_characteristic) curves.
+We can see how our models differ with a ROC curve. Although you can’t tell, the logistic regression and LDA ROC curves sit directly on top of one another. However, we can see how the QDA (green) differs slightly.
+
+```{r fig.width=6, fig.height=4}
+# ROC curves
+library(ROCR)
+
+p1 <- prediction(glm.probs, test$Direction) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+p2 <- prediction(test.predicted.lda$posterior[,2], test$Direction) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+p3 <- prediction(test.predicted.qda$posterior[,2], test$Direction) %>%
+  performance(measure = "tpr", x.measure = "fpr")
+
+plot(p1, col = "red")
+plot(p2, lty=2, add = TRUE, col = "blue")
+plot(p3, lty=3, add = TRUE, col = "green")
+legend('bottomright',legend=c('logistic','lda','qda'),lty=1:3,col=c('red','blue','green'))
+```

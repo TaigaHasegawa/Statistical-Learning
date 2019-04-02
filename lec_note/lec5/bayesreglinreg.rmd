@@ -1,0 +1,371 @@
+---
+title: Bayesian Regularized Linear Regression
+subtitle: with Conjugate Priors
+author: STAT 432
+abstract: This is the supplementary `R` file for Bayesian Regularized Linear Regression in the lecture note "BayesRegLinReg".
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(fig.align='center')
+options(width = 1000)
+```
+
+\newcommand{\bbeta}[0]{{\boldsymbol\beta}}
+\newcommand{\bX}[0]{\mathbf X}
+\newcommand{\bI}[0]{\mathbf I}
+\newcommand{\by}[0]{\mathbf y}
+\newcommand{\T}[0]{\text{T}}
+
+## Basic Concepts
+
+Given the conditional distribution of $y$ given $\theta$ we have the following likelihood function
+$$P(y|\theta)  = P(y_1, y_2, ..., y_n | \theta) = \prod_{i=1}^{n}P(y_i | \theta)$$
+If there exists a \emph{prior} probability distribution $P(\theta)$ over the parameters of the model such that we can find the unconditional (or marginal) joint distribution of observations $P(y)$ exist, then we have the following unnormalized form of the posterior distribution:
+$$P(\theta | y) \propto P(\theta)P(y|\theta)$$
+And we can use the following \emph{posterior predictive distribution} to make prediction and quantify the uncertainty:
+$$P(y_* | y) = \int_{\theta} P(y_* |\theta) P(\theta|y)d\theta$$.
+Depending on the likelihood-prior pairs, we have typical conjugate pairs for which posterior and prior belong to the same type of distributions.
+
+
+### Bionomial-Beta: the election example
+
+Consider the election example about two candidates, $A$ and $B$. We want to predict the who is winning.
+We focus the winning probabability of $A$, denoted as $\theta$.
+We ask 10 people which candidate they would choose in this election. Of 10 people surveyed, 3 people said they are going to vote for $A$. 
+First, we use a non-informative prior -- the uniform prior for $\theta$.
+
+```{r fig.width=8, fig.height=8, out.width = '45%'}
+# data
+n=10; y=3
+# uniform prior for theta, Beta(1,1)
+alpha=1; beta=1;
+# posterior is again Beta
+alpha1=alpha+y; beta1=beta+n-y
+# plot prior, likelihood and posterior
+curve(dbeta(x,alpha1,beta1), from=0,to=1,col='green',xlab=expression(theta),ylab='Density/Likelihood')
+curve(10*dbinom(y,n,x),lty=2,col='red',add=T)
+abline(h=1,lty=3,col='blue')
+legend('topright',legend=c('10*Likelihood function','Priro','Posterior'),lty=c(2,3,1),col=c('red','blue','green'))
+title(main='Election example: uniform prior')
+```
+
+Now we study more about $A$ and have prior belief about the winning probability around 0.55. We select a more informative prior $\text{Beta}(5.5,4.5)$ which peaks at 0.55.
+
+```{r fig.width=8, fig.height=8, out.width = '45%'}
+# informative prior for theta, Beta(5.5,4.5)
+alpha=5.5; beta=4.5;
+# posterior is again Beta
+alpha2=alpha+y; beta2=beta+n-y
+# plot prior, likelihood and posterior
+curve(dbeta(x,alpha2,beta2), from=0,to=1,col='green',xlab=expression(theta),ylab='Density/Likelihood')
+curve(10*dbinom(y,n,x),lty=2,col='red',add=T)
+curve(dbeta(x,alpha,beta),lty=3,col='blue',add=T)
+legend('topright',legend=c('10*Likelihood function','Priro','Posterior'),lty=c(2,3,1),col=c('red','blue','green'))
+# MLE
+abline(v=y/n,lty=2,col='red',lwd=2)
+# predictive winning probability: posterior expectation of theta
+abline(v=alpha2/(alpha2+beta2),col='green',lwd=2)
+# MAP
+abline(v=(alpha2-1)/(alpha2+beta2-2),col='green4',lwd=2)
+title(main='Election example: informative prior')
+```
+
+Now we collect more data by calling another 20 people and 12 of them are going to vote for $A$.
+We can use the previous posterior as the prior for update our belief of $\theta$ with the new set of data.
+
+```{r fig.width=8, fig.height=8, out.width = '45%'}
+# new data
+n3=20; y3=12
+# prevous posterior as the prior
+alpha=alpha2; beta=beta2;
+# posterior is again Beta
+alpha3=alpha+y3; beta3=beta+n3-y3
+# plot prior, likelihood and posterior
+curve(dbeta(x,alpha3,beta3), from=0,to=1,col='green',xlab=expression(theta),ylab='Density/Likelihood')
+curve(10*dbinom(y+y3,n+n3,x),lty=2,col='red',add=T)
+curve(dbeta(x,alpha,beta),lty=3,col='blue',add=T)
+legend('topright',legend=c('10*Likelihood function','Priro','Posterior'),lty=c(2,3,1),col=c('red','blue','green'))
+# MLE
+abline(v=(y+y3)/(n+n3),lty=2,col='red',lwd=2)
+# predictive winning probability: posterior expectation of theta
+abline(v=alpha3/(alpha3+beta3),col='green',lwd=2)
+title(main='Election example: more data')
+```
+
+
+### Poisson-Gamma: the MLS example
+
+Consider the example of David Beckham who joined LA Galaxy in 2008 and scored one goal for his first two MLS games.
+The manager wanted to predict the number of goals Beckham would score in the remaining games.
+We use poisson model for the number of goals $y_i$, with $\theta$ being the rate of scoring a goal.
+For proper prior information about $\theta$, we refer to Beckham's performance in Madrid during 06-07 season when he scored 3 goals in 22 games,
+giving a prior belief pof $\theta$ desirable around $3/22=0.14$. We use $\text{Gamma}(1.4,10)$.
+
+```{r fig.width=8, fig.height=8, out.width = '45%'}
+# data
+n=2; sumy=1
+# prior for theta, Gamma(1.4,10), obtained from historical record
+alpha=1.4; beta=10;
+# posterior is again Gamma
+alpha1=alpha+sumy; beta1=beta+n
+# plot prior, likelihood and posterior
+curve(dgamma(x,shape=alpha1,rate=beta1),from=0,to=2,ylim=c(0,6),col='green',xlab=expression(theta),ylab='Density/Likelihood')
+curve(10*dpois(sumy,x)*exp(-(n-1)*x),lty=2,col='red',add=T)
+curve(dgamma(x,shape=alpha,rate=beta), lty=3, col='blue',add=T)
+legend('topright',legend=c('10*Likelihood function','Priro','Posterior'),lty=c(2,3,1),col=c('red','blue','green'))
+# MLE
+abline(v=sumy/n,lty=2,col='red',lwd=2)
+# posterior expectation of theta
+abline(v=alpha1/beta1,col='green',lwd=2)
+# MAP
+abline(v=(alpha1-1)/beta1,col='green4',lwd=2)
+title(main='MLS example: sparse count data')
+```
+
+
+### Normal-Normal: the students' height example
+
+Assume the height (in inch) of students in class follows a normal distribution $N(\theta,16)$. We are interested in $\theta$.
+We use a prior $\theta\sim N(65,9)$. Then we measure the height of 3 students $y=(72, 75, 70)$. We want to find out the posterior hieght $\theta|y$ and predict the height for the next student.
+
+```{r fig.width=8, fig.height=8, out.width = '45%'}
+# data
+y=c(72, 75, 70); n=length(y); sigma2=16
+# prior for theta, N(65,9), from domain knowledge
+mu_0=65; tau2_0=9;
+# posterior is again normal
+tau2_n=1/(1/tau2_0+n/sigma2)
+mu_n=(mu_0/tau2_0+sum(y)/sigma2)*tau2_n
+# plot prior, likelihood and posterior
+plot(seq(55,88,by=.1), sapply(seq(55,88,by=.1),function(x)200*prod(dnorm(y,x,sqrt(sigma2)))),ylim=c(0,0.26),type='l',lty=2,col='red',xlab=expression(theta),ylab='Density/Likelihood')
+curve(dnorm(x,mu_n,sd=sqrt(tau2_n)),from=55,to=88,col='green',add=T)
+curve(dnorm(x,mu_0,sd=sqrt(tau2_0)), lty=3, col='blue',add=T)
+legend('topright',legend=c('200*Likelihood function','Priro','Posterior'),lty=c(2,3,1),col=c('red','blue','green'))
+# MLE
+abline(v=sum(y)/n,lty=2,col='red',lwd=2)
+# predictive mean: posterior expectation of theta, coincided with MAP
+abline(v=mu_n,col='green4',lwd=2)
+title(main='Students\' height example: known variance')
+```
+
+
+## Bayesian regularized linear regression with conjugate priors
+
+### Bayesian liear regression: Ridge regression
+
+Now we consider the children’s test score example discussed by Gelman and Hill (2007). We are interested in the effect of mother’s education (mhsg) and her IQ (miq) on the cognitive test score of 3 to 4 year old children.
+
+```{r}
+# load dataset
+kidiq = read.csv("kidiq.csv",header=T)
+head(kidiq)
+# select two predictors
+X=cbind(mhsq=kidiq$mom_hs,miq=kidiq$mom_iq)
+y=kidiq$kid_score
+n=length(y); p=dim(X)[2]
+X=cbind(intercept=1,X)
+# prior parameters
+mu0=rep(0,p+1); Lambda0=100^2*diag(p+1)
+nu0=1; sigma20=0.5
+nu_n=nu0+n
+# define rinvchisq
+rinvchisq=function(n,df,scale)(df *scale)/rchisq(n, df = df)
+# generate samples using Gibbs sampler: similar as coordinate descent algorithm
+Nsamp=1e4
+beta_samp=matrix(NA,Nsamp,p+1); sigma2_samp=rep(NA,Nsamp)
+library(mvtnorm)
+set.seed(2019)
+beta_samp[1,]=rmvnorm(1,mu0,Lambda0); sigma2_samp[1]=rinvchisq(1,nu0,sigma20)
+invLambda0=100^(-2)*diag(p+1); XTX=t(X)%*%X; XTy=t(X)%*%y
+for(i in 2:Nsamp){
+  # update beta, conditioned on sigma2
+  Lambda_n=solve(XTX+sigma2_samp[i-1]*invLambda0)
+  mu_n=Lambda_n%*%(XTy+sigma2_samp[i-1]*invLambda0%*%mu0)
+  Lambda_n=Lambda_n*sigma2_samp[i-1]
+  beta_samp[i,]=rmvnorm(1,mu_n,Lambda_n)
+  # update sigma2, conditioned on beta
+  sigma2_n=(nu0*sigma20+sum((y-X%*%beta_samp[i,])^2))/nu_n
+  sigma2_samp[i]=rinvchisq(1,nu_n,sigma2_n)
+}
+# discard the first 1000 to reduce the autocorrelation
+beta_samp=beta_samp[-(1:1000),]; sigma2_samp=sigma2_samp[-(1:1000)]
+```
+
+Now we make trace plots and the posterior density plots.
+```{r fig.width=16, fig.height=8, out.width = '90%'}
+par(mfrow=c(1,2))
+# traceplot beta
+matplot(beta_samp[1:200,],type='l',lty=1,col=c('blue','green','red'),xlab='Iteration',ylab=expression(beta))
+legend('topright',legend = c(expression(beta[0]),expression(beta['mhsq']),expression(beta['miq'])))
+# traceplot beta
+plot(sqrt(sigma2_samp[1:200]),type='l',xlab='Iteration',ylab=expression(sigma))
+```
+
+And we can also plot their posterior densities estimated from the posterior samples.
+```{r fig.width=16, fig.height=8, out.width = '90%'}
+layout(matrix(c(1,2,3,3), 2, 2))
+# plot posterior density of beta
+plot(density(beta_samp[,2]),col='blue',main=NA,xlab=expression(beta['mhsq']),ylab='Density')
+plot(density(beta_samp[,3]),col='blue',main=NA,xlab=expression(beta['miq']),ylab='Density')
+# scatter plot of posterior samples of beta
+plot(beta_samp[1:2000,2],beta_samp[1:2000,3],pch=16,col='blue',xlab=expression(beta['mhsq']),ylab=expression(beta['miq']))
+```
+
+We output the posterior estimates in the following table.
+```{r, result='asis'}
+# estimate the posterior expectation
+beta_pm=colMeans(beta_samp)
+sigma2_pm=mean(sigma2_samp)
+# estimate the 95% credible interval
+beta_ci=apply(beta_samp,2,function(x)quantile(x,probs=c(0.025,.975)))
+sigma2_ci=quantile(sigma2_samp,probs=c(0.025,.975))
+# summarize
+tab=data.frame(Parameter=c('$\\beta_0$','$\\beta_\\text{mhsq}$','$\\beta_\\text{miq}$','$\\sigma$'),
+               PosteriorExpectation=c(beta_pm,sqrt(sigma2_pm)),CredibleInterval95=apply(cbind('[',apply(t(cbind(beta_ci,sqrt(sigma2_ci))),1,function(x)paste(round(x,1),collapse=',')),']'),1,function(x)paste(x,collapse='')))
+library(knitr)
+kable(tab,caption='Posterior Estimates of kid\'s IQ example')
+```
+
+We can verify that the best estimate by Bayesian linear regression coincides with ridge regression solution.
+```{r}
+library(MASS)
+# obtain lambda, based on page 50 of the lecture note 'BayRegLinReg'
+lambda=sigma2_pm*100^(-2)
+# lambda=median(sigma2_samp)*100^(-2)
+lm.ridge(y~X-1,lambda=lambda) # X already includes the intercept
+```
+
+
+### Bayesian Lasso
+
+We consider the diabetes data of Efron et.~al (2004) which has $n=442$ and $p=10$.
+Please refer to [this file](https://bitbucket.org/geomstatcomp/spherical-hmc/src/35f9d8c3920cbcab9b56aeb5431e5fbea1bda453/Lasso/Lasso_gibbs.R?at=master&fileviewer=file-view-default).
+```{r}
+rm(list=ls())
+set.seed(2013)
+library(lars)
+library(mvtnorm)
+library(SuppDists) # rinvGauss
+library(gtools)
+
+## data
+data(diabetes)
+y=diabetes[,'y']
+X=diabetes[,'x']
+y=scale(y,scale=F)
+X=scale(X)
+N=dim(X)[1]; D=dim(X)[2]
+beta_ols=lm(y~-1+X)$coefficients
+OLS_NM1=norm(as.matrix(beta_ols),'1')
+
+XX = t(X)%*%X; Xy = t(X)%*%y
+
+# mode finding function
+Mode <- function(x) {
+	ux <- unique(x)
+	ux[which.max(tabulate(match(x, ux))),]
+}
+
+# inverse Gaussian random variable generator
+rInvGaussian <- function(n=1,mu,lambda){
+	nv=rnorm(n)
+	y=nv^2
+	x=mu+mu*(mu*y-sqrt(mu*(4*lambda+mu*y)*y))/2/lambda
+	z=runif(n)
+	return(ifelse(z<=mu/(mu+x),x,mu^2/x))
+}
+
+
+## storage
+Nsf = 10
+lambda=c(200,140,85,42,20,4.6,1.9,.9,.4,.01)
+NSamp = 11000
+NBurnIn = 1000
+Samp=list(3)
+Samp[[1]] = array(NA,c(NSamp-NBurnIn,D,Nsf)) # beta
+Samp[[2]] = matrix(NA,NSamp-NBurnIn,Nsf) # sigma2
+Samp[[3]] = array(NA,c(NSamp-NBurnIn,D,Nsf)) # tau2
+beta_lasso = matrix(NA,D,Nsf) # Lasso estimate
+
+Time = rep(NA,Nsf)
+
+for(sf in 1:Nsf){
+
+## Initialization
+beta = rep(.01,D)
+sigma2 = 100
+#tau2 = 1/rInvGaussian(1,sqrt(sigma2)*abs(lambda[sf]/beta),lambda[sf]^2)
+tau2 = 1/rinvGauss(rep(1,D),sqrt(sigma2)*abs(lambda[sf]/beta),lambda[sf]^2)
+
+start <- proc.time()
+for(Iter in 1:NSamp){
+	
+    # display per 100 iteration
+    if(Iter%%100==0){
+        cat('Iteration ',Iter,' completed!\n')
+    }
+    
+    # sample beta
+    A = XX+diag(1/tau2); invA = solve(A)
+	beta = t(rmvnorm(1,invA%*%Xy,sigma2*invA))
+	
+	# sample sigma2
+	sigma2 = 1/rgamma(1,(N-1+D)/2,(sum((y-X%*%beta)^2)+sum(beta^2/tau2))/2)
+	
+	# sample tau2
+#	tau2 = 1/rInvGaussian(1,sqrt(sigma2)*abs(lambda[sf]/beta),lambda[sf]^2)
+	tau2 = 1/rinvGauss(rep(1,D),sqrt(sigma2)*abs(lambda[sf]/beta),lambda[sf]^2)
+    
+    if(Iter==NBurnIn) cat('Burn in completed!\n')
+    
+    # save sample beta
+    if(Iter>NBurnIn){
+        Samp[[1]][Iter-NBurnIn,,sf] = beta
+		Samp[[2]][Iter-NBurnIn,sf] = sigma2
+		Samp[[3]][Iter-NBurnIn,,sf] = tau2
+    }
+    
+}
+time = proc.time()-start
+Time[sf] = time[1]
+
+# Get Lasso estimate
+#beta_lasso[,sf] = Mode(Samp[[1]][,,sf])
+beta_lasso[,sf] = apply(Samp[[1]][,,sf],2,median)
+
+}
+
+beta_lasso=cbind(0,beta_lasso)
+
+beta_lasso
+## Save samples to file
+save(NSamp,NBurnIn,Nsf,lambda,Samp,beta_lasso,OLS_NM1,Time,file=paste('./result/Lasso_bayes',Sys.time(),'.RData',sep=''))
+
+## plot all sample
+pdf(paste('./result/Lasso_bayes',Sys.time(),'.pdf',sep=''))
+#op <- par(mfrow=c(2,2),mar=c(3,3,2,1) + 0.1,oma=rep(0,4),mgp=c(2,1,0))
+#
+#gk_beta = sapply(1:D,function(i)as.expression(bquote(beta[.(i)])))
+#
+#matplot(Samp[[1]][seq(1,dim(Samp[[1]])[1],length.out=100),],type='l',xlab='Iteration (per 20)',ylab=expression(beta))
+#legend('topright',legend=gk_beta,lty=c(1:5,1),col=1:6,ncol=3)
+#boxplot(Samp[[1]],names=gk_beta)
+#plot(apply(Samp[[1]][seq(1,dim(Samp[[1]])[1],length.out=100),],1,function(x)norm(as.matrix(x))),type='l',xlab='Iteration (per 20)',ylab=expression(sum(abs(beta[i]),i==1,D)))
+#plot(Samp[[2]][seq(1,length(Samp[[2]]),length.out=100)],type='l',xlab='Iteration (per 20)',ylab=expression(sigma^2))
+#
+#par(op)
+
+op <- par(mar=c(3,3,2,1) + 0.1,oma=rep(1,4),mgp=c(2,1,0))
+
+matplot(t(beta_lasso),type='l',xlab='Shrinking Factor',ylab='Coefficients',xaxt='n')
+axis(1,at=1:(Nsf+1),labels=round(apply(beta_lasso,2,function(x)norm(as.matrix(x),'1'))/OLS_NM1,2))
+axis(4,at=beta_lasso[,Nsf+1],labels=1:Nsf)
+abline(h=0)
+
+par(op)
+
+dev.off()
+```
+

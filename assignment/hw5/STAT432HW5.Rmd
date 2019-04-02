@@ -1,0 +1,114 @@
+---
+title: "STAT432_HW5"
+author: "Taiga Hasegawa(taigah2)"
+date: "2019/2/25"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Question1
+
+(a)$E[(Y-X\hat{\beta})^2]=E[(X\beta+e-X\hat{\beta})^2]=E[(X\beta+e-X\beta+X\beta-E[X\hat{\beta}]+E[X\hat{\beta}]-X\hat{\beta})^2]=E[(X\beta+e-X\beta)^2]+(X\beta-XE[\hat{\beta}])^2+E[(X\hat{\beta}-E(X\hat{\beta}))^2]=e^2+0+\sigma^2$
+
+irreducible error: square error term(e^2). This cannot be reduced becuase we can't predict the e.
+bias: 0 because OLS estimator is unbiased estimator. This evaluates how the average of our estimator deviates from the truth.
+variance: $\sigma^2$ . This reflects the sensitivity of the function estimate f(x) to the training sample
+
+(b) In ridge regression, the element of $\beta$ is shrinked by tuning parameter. $\beta^{ridge}=\alpha\beta^{OLS}$ where $\alpha$ is no more than 0. If we calculate the variance, it(tuning parameter>0) must be smaller than the variance of OLS estimator (tuning parameter=0) by $\alpha^2$, whereas it(tuning parametr>0) is biased because the OLS estimator is biased (tuning parameter=0). That's why as the tuning parameter increase, the vairance decreases and bias increases. 
+
+
+##Question2
+```{r}
+data(Boston, package="MASS") 
+head(Boston)
+useLog = c(1,3,5,6,8,9,10,14) 
+Boston[,useLog] = log(Boston[,useLog]) 
+Boston[,2] = Boston[,2] / 10
+Boston[,7] = Boston[,7]^2.5 / 10^4 
+Boston[,11] = exp(0.4 * Boston[,11])/1000 
+Boston[,12] = Boston[,12] / 100
+Boston[,13] = sqrt(Boston[,13])
+```
+
+a)
+```{r}
+#fit a linear regression
+fit=lm(medv~.,  data=Boston)
+summary(fit)
+```
+
+(b)
+```{r}
+#Calculate the Mallow’s Cp statistic
+n=nrow(Boston)
+RSS=sum(fit$residuals^2)
+p=ncol(Boston)
+RSS+2*p*summary(fit)$sigma^2
+```
+```{r}
+#Calculate the -2*loglikelihood
+sigma2=RSS/n
+loglikelihood= n*log(sigma2) + n + n*log(2*pi)+2
+loglikelihood
+```
+
+```{r}
+#Calculate the AIC
+loglikelihood+2*p
+```
+
+```{r}
+#Calculate the BIC
+loglikelihood+log(n)*p
+```
+
+```{r}
+#Best subset model selection 
+library(leaps)
+#maximum model size is 13
+RSSleaps=regsubsets(as.matrix(Boston[,-14]),Boston[,14],nvmax=13)
+sumleaps=summary(RSSleaps,matrix=T)
+#calculate the AIC
+msize=apply(sumleaps$which,1,sum)
+AIC = n*log(sumleaps$rss/n) + 2*msize
+#13 possible models
+sumleaps$which
+```
+```{r}
+#show which is the best model based on Cp 
+which.min(sumleaps$cp)
+```
+
+```{r}
+#show which is the best model based on AIC
+which.min(AIC)
+```
+```{r}
+#show which is the best model based on BIC
+which.min(sumleaps$bic)
+```
+As a result, they all select the 9th model as the best one. 
+
+This model has following variables: Intercept, chas, nox, rm, dis, rad, tax, ptratio, black and lstat.
+```{r}
+sumleaps$which[9,] 
+```
+
+##Question3
+```{r}
+library(MASS)
+fit = lm.ridge(medv~., Boston, lambda=seq(0,100,by=0.1))
+penaltylevel=which.min(fit$GCV)
+penaltylevel
+```
+
+The best penelty level is `r penaltylevel` based on generalized cross-variation. 
+
+The parameter estimates is like below.
+```{r}
+round(coef(fit)[which.min(fit$GCV), ], 4)
+```
+

@@ -1,0 +1,138 @@
+---
+title: "STAT432_HW4"
+author: "Taiga Hasegawa(taigah2)"
+date: "2019/2/17"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##Question1
+```{r}
+data("iris")
+n=dim(iris)[1]
+x=iris[,1:4]
+cx <- sweep(x, 2, colMeans(x), "-")
+svd=svd(cx)
+```
+
+```{r}
+iris_variation=svd$d^2/(n - 1)
+plot(iris_variation, type = "l", pch = 19, main = "Iris PCA Variance")
+```
+
+```{r}
+svd$v
+```
+
+
+```{r}
+library(ggplot2)
+ggplot(data = data.frame(svd$u), aes(x=X1 ,y=X2)) + 
+    geom_point(color=c("chartreuse4", "darkorange", "deepskyblue")[iris$Species], size = 3)
+```
+
+##Question2
+
+step1)
+```{r}
+library(ElemStatLearn)
+train.x = zip.train[, -1]
+train.y = as.factor(zip.train[, 1]) 
+test.x.one = zip.test[4, -1]
+test.y.one=zip.test[4,1]
+```
+
+```{r}
+#change the test.x.one into matrix 
+test.x.one.matrix=t(matrix(rep(test.x.one,7291),256,7291))
+#calculate the Eucleadian distance and find 15 nearest neighbors
+(index=order(rowSums((test.x.one.matrix-train.x)^2))[1:15])
+```
+
+step2)
+```{r}
+#the most frequent digit among these 15 observations
+names(which.max(table(train.y[index])))
+```
+
+```{r}
+#true digit 
+test.y.one
+```
+
+```{r}
+#change the k to 3
+index=order(rowSums((test.x.one.matrix-train.x)^2))[1:3]
+names(which.max(table(train.y[index])))
+```
+We could get the true label by changeing the value of k. 
+
+step3)
+
+```{r}
+# knn function 
+knn=function(x,k){
+  index=order(rowSums((x-train.x)^2))[1:k]
+  label=as.numeric(names(which.max(table(train.y[index]))))
+  return(label)
+}
+```
+
+
+```{r}
+#define the test dataset
+test.x=zip.test[1:100,-1]
+test.y=zip.test[1:100,1]
+
+#find the best k by calculating the accuracy of each k 
+for(k in 1:20){
+  correct=0
+  for (i in 1:100){
+    x=t(matrix(rep(test.x[i,],7291),256,7291))
+    label=knn(x,k)
+    correct=correct+sum(label==test.y[i])
+  }
+  accuracy=correct/length(test.y)
+  print(accuracy) 
+}
+```
+When k=3, the test accuracy is the highest. 
+
+##Question3 
+```{r}
+library(caret)
+```
+
+```{r}
+#cross validation using aret package 
+TrainData=data.frame(train.x)
+knnFit1 <- train(TrainData, train.y,
+                 method = "knn",
+                 preProcess = c("center", "scale"),
+                 tuneLength = 10,
+                 trControl = trainControl(method = "cv",number = 3))
+knnFit1
+```
+
+k=5 was selected by using cross validation. 
+```{r}
+#define the test dataset
+test.x=zip.test[,-1]
+test.y=zip.test[,1]
+#number of test data 
+n=dim(test.x)[1]
+labels=rep(NA,n)
+#knn
+for (i in 1:n){
+  x=t(matrix(rep(test.x[i,],7291),256,7291))
+  label=knn(x,5)
+  labels[i]=label
+}
+#confusing matrix
+table(labels,test.y)
+```
+
+

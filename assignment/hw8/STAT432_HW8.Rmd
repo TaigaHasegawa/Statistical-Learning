@@ -1,0 +1,245 @@
+---
+title: "STAT432_HW8"
+author: "Taiga Hasegawa(taigah2)"
+date: "2019/3/26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+##Question1
+
+Following logstic regression was done by built-in function. 
+```{r}
+    library(ElemStatLearn)
+    data(SAheart)
+    
+    heart = SAheart
+    heart$famhist = as.numeric(heart$famhist)-1
+    n = nrow(heart)
+    p = ncol(heart)
+    
+    heart.full = glm(chd~., data=heart, family=binomial)
+    round(summary(heart.full)$coef, dig=3)
+    
+    # fitted value 
+    yhat = (heart.full$fitted.values>0.5)
+    table(yhat, SAheart$chd)
+```
+
+I'm going to replicate the above summary matrix using my own code.
+```{r}
+    # Gradient
+    my.gradient <- function(b, x, y)
+    {
+        bm = as.matrix(b) 
+        expxb =  exp(x %*% bm)
+        return(t(x) %*% (y - expxb/(1+expxb)))
+    }
+
+    # Hessian
+    my.hessian <- function(b, x, y)
+    {
+    	bm = as.matrix(b) 
+    	expxb =  exp(x %*% bm)
+    	x1 = sweep(x, 1, expxb/(1+expxb)^2, "*")
+    	return(-t(x) %*% x1)
+    }
+
+    #Newton–Raphson
+    my.logistic <- function(b, x, y, tol = 1e-10, maxitr = 30, gr, hess, verbose = FALSE)
+    {
+        b_new = b
+        
+        for (j in 1:maxitr) # turns out you don't really need many iterations
+        {
+        	b_old = b_new
+        	b_new = b_old - solve(hess(b_old, x, y)) %*% gr(b_old, x, y)
+        	
+        	if (verbose)
+        	{
+        	    cat(paste("at iteration ", j,", current beta is \n", sep = ""))
+        	    cat(round(b_new, 3))
+        	    cat("\n")
+        	}    
+        	if (sum(abs(b_old - b_new)) < tol) break;
+        }
+        return(b_new)
+    }
+```
+
+```{r}
+    x = as.matrix(cbind("intercept" = 1, heart[, 1:9]))
+    y = as.matrix(heart[,10])
+    
+    # set up an initial value
+    b = rep(0, ncol(x))
+    
+    mybeta = my.logistic(b, x, y, tol = 1e-10, maxitr = 20, 
+                         gr = my.gradient, hess = my.hessian, verbose = FALSE)
+    mysd = sqrt(diag(solve(-my.hessian(mybeta, x, y))))  
+    
+    # my summary matrix
+    round(data.frame("beta" = mybeta, "sd" = mysd, "z" = mybeta/mysd, 
+    	  "pvalue" = 2*(1-pnorm(abs(mybeta/mysd)))), dig=3)
+    
+    # fitted value 
+    yhat = (exp(x%*%mybeta)/(1+exp(x%*%mybeta))>0.5)
+    table(yhat, SAheart$chd)
+```
+I got the exactly the same result with the one we found by built-in  function.
+
+```{r eval=FALSE}
+    # set up an initial value
+    b = rep(1, ncol(x))
+
+    mybeta = my.logistic(b, x, y, tol = 1e-10, maxitr = 20, 
+                         gr = my.gradient, hess = my.hessian, verbose = FALSE)
+    
+    mysd = sqrt(diag(solve(-my.hessian(mybeta, x, y))))    
+    
+    # my summary matrix
+    round(data.frame("beta" = mybeta, "sd" = mysd, "z" = mybeta/mysd, 
+    	  "pvalue" = 2*(1-pnorm(abs(mybeta/mysd)))), dig=3)
+```
+I got the error because value in hessian matrix became too small to inverse. 
+
+##Question2
+
+a)
+
+```{r}
+findRows <- function(zip, n) {
+# Find n (random) rows with zip representing 0,1,2,...,9 
+res <- vector(length=10, mode="list")
+names(res) <- 0:9
+ind <- zip[,1]
+for (j in 0:9) {
+res[[j+1]] <- sample( which(ind==j), n ) }
+return(res)
+}
+set.seed(1)
+# find 100 samples for each digit for both the training and testing data
+train.id <- findRows(zip.train, 100) 
+train.id = unlist(train.id)
+test.id <- findRows(zip.test, 100) 
+test.id = unlist(test.id)
+X = zip.train[train.id, -1] 
+Y = zip.train[train.id, 1] 
+dim(X)
+
+ Xtest = zip.test[test.id, -1] 
+ Ytest = zip.test[test.id, 1] 
+ dim(Xtest)
+```
+
+```{r}
+#prior 
+pi_k=0.1
+
+#centroid 
+mu_k=sapply(0:9, function(x) apply(X[Y==x,],2,FUN=mean))
+
+#covariance
+Sigma=1/(1000-10)*(99*cov(X[Y==0,])+99*cov(X[Y==1,])+99*cov(X[Y==2,])+99*cov(X[Y==3,])+99*cov(X[Y==4,])+99*cov(X[Y==5,])+99*cov(X[Y==6,])+99*cov(X[Y==7,])+99*cov(X[Y==8,])+99*cov(X[Y==9,]))
+
+#W_k
+w_k=sapply(1:10, function(x) solve(Sigma)%*%mu_k[,x])
+
+#b_k
+b_k=sapply(1:10, function(x) -1/2*t(mu_k[,x])%*%solve(Sigma)%*%mu_k[,x]+log(pi_k))
+
+#prediction
+answer=sapply(1:1000,function(x) which.max(t(t(w_k)%*%t(Xtest)+b_k)[x,]))-1
+
+#confusion matrix
+table(Ytest, answer)
+
+#prediction accuracy
+mean(Ytest == answer)
+```
+
+b)
+
+QDA does not work on this dataset. So I used one of the regularized approaches provided in the lecture note.
+```{r}
+library(mlbench)
+library(caret)
+library(glmnet)
+library(klaR)
+library(methods)
+```
+
+```{r warning=FALSE, error=FALSE}
+set.seed(1337)
+data=data.frame(zip.train[train.id, ])
+data$X1=as.factor(data$X1)
+cv_5_grid = trainControl(method = "cv", number = 5)
+set.seed(1337)
+fit_rda_grid = train(X1 ~ ., data = data, method = "rda", trControl = cv_5_grid)
+fit_rda_grid
+```
+
+Next approach is that we reduced the dimension of the dataset first by PCA and then apply QDA.
+```{r}
+zip=rbind(X,Xtest)
+pca=prcomp(zip)
+plot(pca, type = "l", pch = 19, main = "Digits : PCA Variance")
+pca=pca$x[,1:9]
+X=pca[1:1000,]
+Xtest=pca[1001:2000,]
+dig.qda = qda(X, Y)
+Ytest.pred=predict(dig.qda, Xtest)$class
+table(Ytest, Ytest.pred)
+mean(Ytest == Ytest.pred)
+```
+This approach is not as good as the previous one. 
+
+##Question3
+
+```{r}
+#Prepare the dataset
+
+y=c("No","No","Yes","Yes","Yes","No","Yes","No","Yes","Yes","Yes","Yes","Yes","No")
+
+Xtrain=data.frame(
+  "outlook"=c("Rainy","Rainy","Overcast","Sunny","Sunny","Sunny","Overcast","Rainy","Rainy","Sunny","Rainy","Overcast","Overcast","Sunny"),
+  "temperature"=c("Hot","Hot","Hot","Mild","Cool","Cool","Cool","Mild","Cool","Mild","Mild","Mild","Hot","mild"),
+  "humidity"=c("High","High","High","High","Normal","Normal","Normal","High","Normal","Normal","Normal","High","Normal","High"),
+  "windy"=c("False","True","False","False","False","True","True","False","False","False","Ture","True","False","True"),
+  "play_golf"=c("No","No","Yes","Yes","Yes","No","Yes","No","Yes","Yes","Yes","Yes","Yes","No")
+  )
+
+Xtest=c("Sunny","Hot","Normal","False")
+```
+
+```{r}
+#Naive bayes
+naivebayes=function(y,Xtrain,Xtest){
+  prior_no=table(y)[1]/length(y)
+  prior_yes=table(y)[2]/length(y)
+  index=1
+  condition_yes=rep(NA,length(Xtest))
+  condition_no=rep(NA,length(Xtest))
+  for(i in Xtest){
+    X=Xtrain[Xtrain[,index]==i,]
+    condition_yes[index]=sum(X[,ncol(X)]=="Yes")/table(y)[2]
+    condition_no[index]=sum(X[,ncol(X)]=="No")/table(y)[1]
+    index=index+1
+  }
+  posterior_yes=prod(condition_yes)*prior_yes
+  posterior_no=prod(condition_no)*prior_no
+  if(posterior_yes>posterior_no){
+    cat("Yes")
+  }else{cat("No")}
+}
+
+```
+
+```{r}
+naivebayes(y,Xtrain,Xtest)
+```
+

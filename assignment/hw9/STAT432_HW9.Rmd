@@ -1,0 +1,108 @@
+---
+title: "STAT432_HW9"
+author: "Taiga Hasegawa(taigah2)"
+date: "2019/4/4"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+#Question1
+
+```{r}
+library(ElemStatLearn)
+data(bone)
+traindata = bone[bone$gender == "female", ] 
+traindata=traindata[order(traindata$age),]
+plot(spnbmd~ age, data = traindata, pch = 19)
+```
+```{r}
+myknots = c(12, 17)
+```
+
+```{r}
+pos <- function(x) x^3*(x>0)
+mybasis = cbind("int" = 1, "x_1" = traindata$age, "x_2"=(traindata$age)^2,"x_3"=(traindata$age)^3,
+				  "x_4" = pos(traindata$age - myknots[1]), 
+				  "x_5" = pos(traindata$age - myknots[2]))
+df=2+3
+```
+Degree of freedom is `r df`.
+
+```{r}
+lmfit <- lm(traindata$spnbmd ~ ., data = data.frame(mybasis))
+par(mar = c(2,3,2,0))  
+plot(traindata$spnbmd~traindata$age, pch = 19, col = "darkorange")
+lines(traindata$age, lmfit$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+abline(v = myknots, lty = 2)
+title("Cubic Spline")
+```
+```{r}
+lmfit=lm(spnbmd~splines::bs(age,degree=3,knots = myknots),data=traindata)
+par(mar = c(2,3,2,0))  
+plot(spnbmd~age, pch = 19, col = "darkorange",data = traindata)
+lines(traindata$age, lmfit$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+abline(v = myknots, lty = 2)
+title("Cubic Spline with 2 knots")
+```
+```{r}
+myknots=c(12,14,17,20)
+```
+
+```{r}
+d <- function(x=traindata$age,k){
+  ((x-myknots[k])^3*((x-myknots[k])>0)-(x-max(x))^3*((x-max(x))>0))/(max(x)-myknots[k])
+}
+x=traindata$age
+mybasis = cbind("N_1" = 1, "N_2" = traindata$age,
+                "N_3"=(((x-min(x))^3*((x-min(x))>0)-(x-max(x))^3*((x-max(x))>0))/(max(x)-min(x)))-d(k=4),
+                "N_4"=d(k=1)-d(k=4),
+				        "N_5" = d(k=2)-d(k=4),
+                "N_6"=d(k=3)-d(k=4))
+df=5
+```
+Degree of freedom is 5.
+
+```{r}
+lmfit <- lm(traindata$spnbmd ~ .-1, data = data.frame(mybasis))
+par(mar = c(2,3,2,0))  
+plot(traindata$spnbmd~traindata$age, pch = 19, col = "darkorange")
+lines(traindata$age, lmfit$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+abline(v = myknots, lty = 2)
+title("Natural Cubic Spline")
+```
+
+```{r}
+library(splines)
+lmfit=lm(spnbmd~ns(age,knots = myknots),data=traindata)
+par(mar = c(2,3,2,0))  
+plot(traindata$spnbmd~traindata$age, pch = 19, col = "darkorange")
+lines(traindata$age, lmfit$fitted.values, lty = 1, col = "deepskyblue", lwd = 4)
+abline(v = myknots, lty = 2)
+title("Natural Cubic Spline")
+```
+
+#Question2
+
+```{r}
+data(ozone) 
+head(ozone)
+```
+
+
+```{r}
+    library(ElemStatLearn)
+    library(gam)
+
+    form = formula("ozone ~ ns(radiation,df=4) + ns(temperature,df=4) + ns(wind,df=4)")
+    
+    m = gam(form, data=ozone)
+    summary(m)
+    
+    par(mfrow = c(1, 3), mar = c(5, 5, 2, 0))
+    plot(m, se = TRUE, residuals = TRUE)
+```
+

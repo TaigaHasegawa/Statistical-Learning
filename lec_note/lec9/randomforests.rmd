@@ -1,0 +1,258 @@
+---
+title: Random Forests
+author: STAT 432
+abstract: This is the supplementary `R` file for tree, bagging and random forests in the lecture note "RandomForests".
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(fig.align='center')
+options(width = 1000)
+```
+
+## A Classification Tree Example 
+
+Let's generate a model with nonlinear classification rule. 
+
+```{r, fig.width=6, fig.height=6, out.width = '35%'}
+    set.seed(1)
+    n = 500
+    x1 = runif(n, -1, 1)
+    x2 = runif(n, -1, 1)
+    y = rbinom(n, size = 1, prob = ifelse(x1^2 + x2^2 < 0.6, 0.9, 0.1))
+    
+    par(mar=rep(2,4))
+    plot(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19)
+    symbols(0, 0, circles = sqrt(0.6), add = TRUE, inches = FALSE, cex = 2)
+```
+
+A classification tree model is recursively splitting the feature space such that the 
+
+```{r fig.width=13, fig.height=5, out.width = '80%'}
+    library(rpart)
+    rpart.fit = rpart(as.factor(y)~x1+x2, data = data.frame(x1, x2, y))
+    par(mfrow = c(1, 2))
+    
+    # the tree structure    
+    par(mar=rep(0.5,4))
+    plot(rpart.fit)
+    text(rpart.fit)    
+    
+    # and the tuning parameter 
+    par(mar=rep(2,4))
+    plotcp(rpart.fit)    
+    
+    # if you want to peek into the tree 
+    
+    rpart.fit$cptable
+    prune(rpart.fit, cp = 0.041)
+```
+
+
+The model proceed with the following steps. Note that steps 5 and 6 are not really benifical. 
+
+```{r, fig.width=12, fig.height=9, out.width = '80%', echo = FALSE}
+    
+    TreeSteps <- function(i)
+    {
+        plot(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19, yaxt="n", xaxt = "n")
+        
+        # the four cuts that are performing well
+        if(i > 0) lines(x = c(-1, 1), y = c(-0.6444322, -0.6444322), lwd = 2)
+        if(i > 1) lines(x = c(0.6941279, 0.6941279), y = c(-0.6444322, 1), lwd = 2)
+        if(i > 2) lines(x = c(-1, 0.6941279), y = c(0.7484327, 0.7484327), lwd = 2)
+        if(i > 3) lines(x = c(-0.6903174, -0.6903174), y = c(-0.6444322, 0.7484327), lwd = 2)
+        
+        # the model will go further, but they seem to be over-fitting
+        if(i > 4) lines(x = c(-0.7675897, -0.7675897), y = c(-0.6444322, 0.7484327), lwd = 3, lty = 2, col = "red")
+        if(i > 5) lines(x = c(-0.6903174, 0.6941279), y = c(0.3800769, 0.3800769), lwd = 3, lty = 2, col = "red")           
+    }
+
+    par(mfrow = c(2, 3), mar=c(0.5, 0.5, 3, 0.5))
+    for (i in c(1,2,3,4,5,6)) 
+    {
+        TreeSteps(i)
+        title(paste("Tree splitting step", i))
+    }
+```
+
+There are many other packages that can perform the same analysis.
+
+```{r, fig.width=6, fig.height=6, out.width = '35%'}
+    library(tree)
+    tree.fit = tree(as.factor(y)~x1+x2, data = data.frame(x1, x2, y))
+    plot(tree.fit)
+    text(tree.fit)
+```
+
+## Gini Impurity vs. Shannon Entropy vs. Misclassification Error
+
+Gini Impurity is used in CART, while ID3/C4.5 uses the Shannon entropy. These measures have different effects than the misclassification error. They usually perfer "pure" nodes, meaning that the benifit of singling out a set of pure class terminal node is large for Gini and Shannon. This is because their measures are nonlinear. 
+
+```{r, fig.width=6, fig.height=6, out.width = '35%', echo = FALSE}
+    gini <- function(y)
+    {
+    	p = table(y)/length(y)
+    	sum(p*(1-p))
+    }
+    
+    shannon <- function(y)
+    {
+    	p = table(y)/length(y)
+    	-sum(p*log(p))
+    }
+    
+    error <- function(y)
+    {
+    	p = table(y)/length(y)
+    	1 - max(p)
+    }
+    
+    score <- function(TL, TR, measure)
+    {
+    	nl = length(TL)
+    	nr = length(TR)
+    	n = nl + nr
+    	f <- get(measure)
+    	f(c(TL, TR)) - nl/n*f(TL) - nr/n*f(TR)
+    }
+    
+    TL = rep(1, 3)
+    TR = c(rep(1, 4), rep(0, 3))
+    
+    # score(TL, TR, "gini")
+    # score(TL, TR, "shannon")
+    # score(TL, TR, "error")
+    
+    x = seq(0, 1, 0.01)
+    g = 2*x*(1-x)
+    s = -x*log(x) - (1-x)*log(1-x)
+    e = 1-pmax(x, 1-x)
+    
+    par(mar=c(4.2,4.2,2,2))
+    plot(x, s, type = "l", lty = 1, col = 3, lwd = 2, ylim = c(0, 1), ylab = "Impurity", xlab = "p", cex.lab = 1.5)
+    lines(x, g, lty = 1, col = 2, lwd = 2)
+    lines(x, e, lty = 1, col = 4, lwd = 2)
+    
+    legend("topleft", c("Entropy", "Gini", "Error"), col = c(3,2,4), lty =1, cex = 1.2)
+```
+
+## Bagging
+
+
+```{r, fig.width=13, fig.height=6, out.width = '90%'}
+    
+    # bagging from ipred package
+    library(ipred)
+    library(rpart)
+    
+    set.seed(2)
+    n = 1000
+    x1 = runif(n, -1, 1)
+    x2 = runif(n, -1, 1)
+    y = rbinom(n, size = 1, prob = ifelse((x1 + x2 > -0.5) & (x1 + x2 < 0.5) , 0.8, 0.2))
+    xgrid = expand.grid(x1 = seq(-1, 1, 0.01), x2 = seq(-1, 1, 0.01))
+    par(mfrow=c(1,2), mar=c(0.5, 0.5, 2, 0.5))
+    
+    # CART
+    rpart.fit = rpart(as.factor(y)~x1+x2, data = data.frame(x1, x2, y))
+    #rpart.fit = rpart(as.factor(y)~x1+x2, data = data.frame(x1, x2, y)[sample(1:n, n, replace = TRUE), ])
+    pred = matrix(predict(rpart.fit, xgrid, type = "class") == 1, 201, 201)
+    contour(seq(-1, 1, 0.01), seq(-1, 1, 0.01), pred, levels=0.5, labels="",axes=FALSE)
+    points(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19, yaxt="n", xaxt = "n")
+    points(xgrid, pch=".", cex=1.2, col=ifelse(pred, "deepskyblue", "darkorange"))
+    box()    
+    title("CART")
+    
+    #Bagging
+    bag.fit = bagging(as.factor(y)~x1+x2, data = data.frame(x1, x2, y), nbagg = 200, ns = 400)
+    pred = matrix(predict(prune(bag.fit), xgrid) == 1, 201, 201)
+    contour(seq(-1, 1, 0.01), seq(-1, 1, 0.01), pred, levels=0.5, labels="",axes=FALSE)
+    points(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19, yaxt="n", xaxt = "n")
+    points(xgrid, pch=".", cex=1.2, col=ifelse(pred, "deepskyblue", "darkorange"))
+    box()
+    title("Bagging")
+```
+
+
+## Random Forests
+
+In this two dimensional setting, we don't see much improvement by using random forests. However, the improvement is significant in high dimensional settings. 
+
+```{r, fig.width=6, fig.height=6, out.width = '45%'}
+    library(randomForest)
+    par(mar=c(0.5, 0.5, 2, 0.5))
+    rf.fit = randomForest(cbind(x1, x2), as.factor(y), ntree = 1000, mtry = 1, nodesize = 20, sampsize = 500)
+    pred = matrix(predict(rf.fit, xgrid) == 1, 201, 201)
+    contour(seq(-1, 1, 0.01), seq(-1, 1, 0.01), pred, levels=0.5, labels="",axes=FALSE)
+    points(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19, yaxt="n", xaxt = "n")
+    points(xgrid, pch=".", cex=1.2, col=ifelse(pred, "deepskyblue", "darkorange"))
+    box()
+    title("Random Forests")
+```
+
+## Random Forests vs. Kernel 
+
+```{r echo = FALSE}
+    rf.kernel.weights <- function(rffit, x, testx)
+    {
+        if (ncol(x) != length(testx))
+            stop("dimention of x and test differ.")
+        
+        if (is.null(rffit$inbag))
+            stop("the random forest fitting must contain inbag information")
+        
+        register = matrix(NA, nrow(x), rffit$ntree)
+        
+        for (i in 1:nrow(x))
+            register[i, ] = attributes(predict(rffit, x[i,], node = TRUE))$nodes
+        
+        regi = attributes(predict(rffit, testx, node = TRUE))$nodes
+        
+        return(rowSums( sweep(register, 2, regi, FUN = "==")*rffit$inbag ))
+    }
+
+    plotRFKernel <- function(rffit, x, onex)
+    {
+        wt = rf.kernel.weights(rffit, x, onex)
+        wt = wt/max(wt)
+        
+        contour(seq(-1, 1, 0.01), seq(-1, 1, 0.01), pred, levels=0.5, labels="",axes=FALSE)
+        points(x1, x2, cex = 4*wt^(2/3), pch = 1, cex.axis=1.25, lwd = 2)
+        points(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19, cex = 0.75, yaxt="n", xaxt = "n")
+        points(xgrid, pch=".", cex=1.2, col=ifelse(pred, "deepskyblue", "darkorange"))
+        points(onex[1], onex[2], pch = 4, col = "red", cex =4, lwd = 6)        
+        box()
+    }
+```
+
+I wrote a small function that will extract the kernel weights from a random forests for predicting a testing point $x$. This is essentially the counts for how many times a training data falls into the same terminal node as $x$. Since the prediction on $x$ are essentially the average of them in a weighted fashion, this is basially a kernel averaging approach. However, the kernel weights are adaptive to the ture structure. 
+
+```{r fig.width=12, fig.height=6, out.width = '90%'}
+    # fit a random forest model
+    rf.fit = randomForest(cbind(x1, x2), as.factor(y), ntree = 300, mtry = 1, nodesize = 20, keep.inbag = TRUE)
+    pred = matrix(predict(rf.fit, xgrid) == 1, 201, 201)
+    
+    par(mfrow=c(1,2), mar=c(0.5, 0.5, 2, 0.5))
+
+    # check the kernel weight at different points
+
+    plotRFKernel(rf.fit, data.frame(cbind(x1, x2)), c(-0.1, 0.4))
+    plotRFKernel(rf.fit, data.frame(cbind(x1, x2)), c(0, 0.6))
+```
+
+As contrast, here is the regular Gaussian kernel weights (after some tuning). This effect will play an important role when $p$ is large. 
+
+```{r fig.width=6, fig.height=6, out.width = '45%'}
+    # Gaussain kernel weights
+    onex = c(-0.1, 0.4)
+    h = 0.2
+    wt = exp(-0.5*rowSums(sweep(cbind(x1, x2), 2, onex, FUN = "-")^2)/h^2)
+    contour(seq(-1, 1, 0.01), seq(-1, 1, 0.01), pred, levels=0.5, labels="",axes=FALSE)
+    points(x1, x2, cex = 4*wt^(2/3), pch = 1, cex.axis=1.25, lwd = 2)
+    points(x1, x2, col = ifelse(y == 1, "deepskyblue", "darkorange"), pch = 19, cex = 0.75, yaxt="n", xaxt = "n")
+    points(xgrid, pch=".", cex=1.2, col=ifelse(pred, "deepskyblue", "darkorange"))
+    points(onex[1], onex[2], pch = 4, col = "red", cex =4, lwd = 6)        
+    box()
+```

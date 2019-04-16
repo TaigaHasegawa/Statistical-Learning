@@ -1,0 +1,155 @@
+---
+title: SVM
+author: STAT 432
+abstract: This is the supplementary `R` file for support vector machines in the lecture note "SVM".
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(fig.align='center')
+options(width = 1000)
+```
+
+## Linear Seperable Case
+
+In linearly seperable SVM, we find a hyperplane 
+$$\{ x: \beta_0 + x^\text{T} \boldsymbol \beta = 0 \}$$
+such that all observations with $y_i = 1$ are on one side, and observations with $y_i = -1$ are on the other side. We generate the data as follows. 
+
+```{r fig.width=8, fig.height=8, out.width = '40%'}
+    set.seed(1)
+    n <- 6 # number of data points for each class
+    p <- 2 # dimension
+    
+    # Generate the positive and negative examples
+    xpos <- matrix(rnorm(n*p,mean=0,sd=1),n,p)
+    xneg <- matrix(rnorm(n*p,mean=3,sd=1),n,p)
+    x <- rbind(xpos,xneg)
+    y <- matrix(as.factor(c(rep(1,n),rep(-1,n))))
+    plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5)
+    legend("bottomright", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 1.5)
+```
+
+We use the `e1071` package to fit the SVM. There is a cost parameter $C$, with default value 1. This parameter has a significant impact on non-separable problems. However, for our separable case, we will set this to be a very large value, meaning that the cost for having a wrong classification is very large. We also need to specify the `linear` kernel. 
+
+```{r}
+    library(e1071)
+    svm.fit <- svm(y ~ ., data = data.frame(x, y), type='C-classification', 
+                   kernel='linear', scale=FALSE, cost = 10000)
+```
+
+Recall that there will only be a small number of points that decides the margin. These points are the ones with $\alpha_i > 0$ in our dual form. These inforamtion are provided by two components: 
+
+* `coefs` provides the $y_i*\alpha_i$ for the support vectors
+* `SV` are the $x_i$ values correspond to the support vectors 
+* `rho` is negative $\beta_0$
+
+```{r fig.width=8, fig.height=8, out.width = '40%'}
+    b <- t(svm.fit$coefs) %*% svm.fit$SV
+    b0 <- -svm.fit$rho
+    
+    # an alternative of b0 as the lecture note
+    b0 <- -(max(x[y == -1, ] %*% t(b)) + min(x[y == 1, ] %*% t(b)))/2
+    
+    # plot on the data 
+    plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5)
+    legend("bottomleft", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 1.5)
+    abline(a= -b0/b[1,2], b=-b[1,1]/b[1,2], col="black", lty=1, lwd = 2)
+    
+    # mark the support vectors
+    points(x[svm.fit$index, ], col="black", cex=3)
+    
+    # the two margin lines 
+    abline(a= (-b0-1)/b[1,2], b=-b[1,1]/b[1,2], col="black", lty=3, lwd = 2)
+    abline(a= (-b0+1)/b[1,2], b=-b[1,1]/b[1,2], col="black", lty=3, lwd = 2)
+```
+
+## Linearly Non-seperable Case
+
+We generate a case where some observations are on the wrong side. We use the default $C = 1$. 
+
+```{r fig.width=8, fig.height=8, out.width = '40%'}
+
+    set.seed(70)
+    n <- 10 # number of data points for each class
+    p <- 2 # dimension
+
+    # Generate the positive and negative examples
+    xpos <- matrix(rnorm(n*p,mean=0,sd=1),n,p)
+    xneg <- matrix(rnorm(n*p,mean=1.5,sd=1),n,p)
+    x <- rbind(xpos,xneg)
+    y <- matrix(as.factor(c(rep(1,n),rep(-1,n))))
+
+    # Visualize the data
+    
+    plot(x,col=ifelse(y>0,"red", "blue"), pch = 19, cex = 1.2, lwd = 2, xlab = "X1", ylab = "X2", cex.lab = 1.5)
+    legend("topright", c("Positive","Negative"),col=c("red", "blue"),pch=c(19, 19),text.col=c("red", "blue"), cex = 1.5)
+
+    svm.fit <- svm(y ~ ., data = data.frame(x, y), type='C-classification', 
+                   kernel='linear',scale=FALSE, cost = 1)
+
+    b <- t(svm.fit$coefs) %*% svm.fit$SV
+    b0 <- -svm.fit$rho
+    
+    points(x[svm.fit$index, ], col="black", cex=3)     
+    abline(a= -b0/b[1,2], b=-b[1,1]/b[1,2], col="black", lty=1, lwd = 2)
+    
+    abline(a= (-b0-1)/b[1,2], b=-b[1,1]/b[1,2], col="black", lty=3, lwd = 2)
+    abline(a= (-b0+1)/b[1,2], b=-b[1,1]/b[1,2], col="black", lty=3, lwd = 2)
+```
+
+## Nonlinear SVM 
+
+We use the `mixture.example` dataset in the `ElemStatLearn` package. In addition, we use a different package `kernlab`.
+
+```{r fig.width=8, fig.height=8, out.width = '40%'}
+    rm(list = ls())
+    library(ElemStatLearn)
+    data(mixture.example)
+    attach(mixture.example)
+    names(mixture.example)
+
+    ### train the SVM using a different package
+    library(kernlab)
+    cost = 10
+    svm.fit <- ksvm(x,y,type="C-svc",kernel='vanilladot',C=cost,scaled=c())
+
+    #Bayes decision boundary:
+    prob1<-mixture.example$prob
+    prob.bayes <- matrix(prob1, length(px1), length(px2))
+    contour(px1, px2, prob.bayes, levels=0.5, lty=2, labels="", xlab="x1",ylab="x2",
+            main="SVM with linear kernal")
+    points(x, col=ifelse(y==1, "darkorange", "deepskyblue"))
+
+    # Extract the indices of the support vectors on the margin:
+    sv.alpha<-alpha(svm.fit)[[1]][which(alpha(svm.fit)[[1]]<cost)]
+    sv.index<-alphaindex(svm.fit)[[1]][which(alpha(svm.fit)[[1]]<cost)]
+    sv.matrix<-x[sv.index,]
+    points(sv.matrix, pch=16, col=ifelse(y[sv.index] == 1, "darkorange", "deepskyblue"), cex=1.5)
+
+    # Plot the hyperplane and the margins:
+    w <- t(cbind(coef(svm.fit)[[1]])) %*% xmatrix(svm.fit)[[1]]
+    b <- - b(svm.fit)
+
+    abline(a= -b/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=1, lwd = 2)
+    abline(a= (-b-1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+    abline(a= (-b+1)/w[1,2], b=-w[1,1]/w[1,2], col="black", lty=3, lwd = 2)
+    
+    dat = data.frame(y = factor(y), x)
+    fit = svm(factor(y) ~ ., data = dat, scale = FALSE, kernel = "radial", cost = 5)
+    
+    xgrid = expand.grid(X1 = px1, X2 = px2)
+    func = predict(fit, xgrid, decision.values = TRUE)
+    func = attributes(func)$decision
+    
+    ygrid = predict(fit, xgrid)
+    plot(xgrid, col = ifelse(ygrid == 1, "bisque", "cadetblue1"), pch = 20, cex = 0.2, main="SVM with radial kernal")
+    points(x, col=ifelse(y==1, "darkorange", "deepskyblue"))
+    
+    contour(px1, px2, matrix(func, 69, 99), level = 0, add = TRUE)
+    contour(px1, px2, matrix(prob, 69, 99), level = 0.5, add = TRUE, col = "blue", lwd = 2)
+```
+
+
+

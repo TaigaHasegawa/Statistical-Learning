@@ -1,0 +1,118 @@
+---
+title: "Predecting_Model"
+author: "Taiga Hasegawa(taigah2)"
+date: "2019/4/12"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(tidyr)
+library(MASS)
+library(randomForest)
+train_X=read.csv("train_X.csv")[,-1]
+train_y=read.csv("train_y.csv")[,-1]
+train=cbind(train_X,train_y)
+train_final=drop_na(train)
+test_X=read.csv("test_X.csv")[,-1]
+test_y=read.csv("test_y.csv")[,-1]
+colnames(train_final)
+```
+
+
+```{r}
+  test=cbind(test_X,test_y)
+  colnames(test)[48]="train_y"
+  test_final=test
+  
+  train_final_for_pca=train_final[,c(-2,-3,-4,-7,-48)]
+
+  test_final_for_pca=test_final[,c(-2,-3,-4,-7,-48)]
+
+  pca=prcomp(train_final_for_pca,scale. = TRUE)
+
+  train_pca=pca$x[,1:9]
+  
+  test_pca <- predict(pca, newdata =test_final_for_pca )
+  test_pca=data.frame(test_pca[,1:9])
+  
+  #logistic regression
+  y=train_final[,48]
+  train_pca=data.frame(cbind(train_pca,y))
+  fit=glm(y~.,data = train_pca,family = binomial(link=logit))
+  
+  predicted <- predict(fit, test_pca, type="response")
+
+  result.pred = rep(0, length(predicted))
+  result.pred[predicted > .5] = 1
+
+  table(result.pred,test_final[,48])
+  mean(result.pred==test_final[,48])
+  #LDA
+  dig.lda=lda(train_pca[,1:9],y)
+  Ytest.pred.lda=predict(dig.lda, test_pca[,1:9])$class
+  table(test_final[,48],Ytest.pred.lda)
+  mean(test_final[,48]==Ytest.pred.lda)
+  #QDA
+  dig.qda=qda(train_pca[,1:9],y)
+  Ytest.pred.qda=predict(dig.qda, test_pca[,1:9])$class
+  table(test_final[,48],Ytest.pred.qda)
+  mean(test_final[,48]==Ytest.pred.qda)
+  #Random Forest
+  rf.fit = randomForest(train_pca[,1:9], as.factor(y), ntree = 1500, mtry = 3, nodesize = 10, sampsize = 500)
+  pred = predict(rf.fit, test_pca[,1:9])
+  table(test_final[,48],pred)
+  mean(test_final[,48]==pred)
+  #Pts
+  result_from_pts=ifelse(test_final$Pts_diff>0,1,0)
+  table(result_from_pts,test_final[,48])
+  mean(result_from_pts==test_final[,48])
+```
+
+#Neural Network
+```{r}
+train_mean=apply(train_final_for_pca, 2, FUN=mean)
+train_for_neural=scale(train_final_for_pca,center = train_mean, scale = FALSE)
+test_for_neural=scale(test_final_for_pca,center = train_mean, scale = FALSE)
+
+library(keras)
+k_clear_session()
+model <- keras_model_sequential() %>% 
+    layer_dense(units = 64, activation = "relu", kernel_regularizer = regularizer_l2(0.001),
+                input_shape = dim(train_for_neural)[2]) %>% 
+    layer_dropout(rate = 0.5) %>%
+    layer_dense(units = 64, kernel_regularizer = regularizer_l2(0.001),activation = "relu") %>% 
+    layer_dropout(rate = 0.5) %>%
+    layer_dense(units = 1,kernel_regularizer = regularizer_l2(0.001), activation = "sigmoid") 
+
+model %>% compile(
+    optimizer = optimizer_rmsprop(lr=0.001), 
+    loss = "binary_crossentropy", 
+    metrics = c("accuracy")
+)
+```
+
+```{r}
+val_indices <- 1:10000
+
+set.seed(100)
+
+index <- sample(dim(train_for_neural)[1],10000,replace = FALSE)
+x_val=train_for_neural[index,]
+x_train=train_for_neural[-index,]
+
+y_val <- y[index]
+y_train <- y[-index]
+
+num_epochs <- 25
+model %>% fit(x_train, y_train,
+                epochs = num_epochs, batch_size = 128,validation_data = list(x_val, y_val))
+results <- model %>% evaluate(test_for_neural, test_final[,48])
+results
+table(predict_classes(model, test_for_neural),test_final[,48])
+```
+
